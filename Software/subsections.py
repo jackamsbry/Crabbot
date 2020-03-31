@@ -28,9 +28,6 @@ import time, math
 import numpy as np
 from scipy.interpolate import CubicSpline
 
-MAXSERVOSPEED = 0
-
-
 class body(object):
     """this object holds all state information and computes inverse kinematics for robot body""" 
     def __init__(self, blength, bwidth, boffset):
@@ -48,11 +45,6 @@ class body(object):
         self.bodyRot_x = 0 #pitch
         self.bodyRot_y = 0 #roll
         self.bodyRot_z = 0 #yaw
-
-        #current states
-        self.isMoving = False
-        #speed level
-        self.speedLevel = 0
 
         #gaits
         self.gaitType = 0
@@ -98,23 +90,26 @@ class hexleg(object):
         self.legIndex = legIndex
         #Set initial values for robot startup
         self.a_coxa = 90
-        self.a_femur = 0
+        self.a_femur = 150
         self.a_tibia = 180
         self.isInverted = isInverted
+
+        self.a_coxa_new = 0
+        self.a_femur_new = 0
+        self.a_tibia_new = 0
         
         if isInverted:
             self.servo_index = [self.legIndex*3, self.legIndex*3 + 1, self.legIndex*3 + 2]
         else:
             self.servo_index = [(self.legIndex-3)*3, (self.legIndex-3)*3 + 1, (self.legIndex-3)*3 + 2]
 
+        #Move servos to initial position
         self.coxa_servo = ServoKit.servo[self.servo_index[0]]
         self.femur_servo = ServoKit.servo[self.servo_index[1]]
         self.tibia_servo = ServoKit.servo[self.servo_index[2]]
 
         #Initialize variables for inverse kinematics
-        self.x = 0
-        self.y = 0
-        self.z = 0
+        self.x, self.y, self.z = self.FKSolve(self.a_coxa, self.a_femur, self.a_tibia)
 
         self.x_new = 0
         self.y_new = 0
@@ -124,9 +119,9 @@ class hexleg(object):
         self.run_femur_angle(self.a_femur)
         self.run_tibia_angle(self.a_tibia)
 
-        self.x, self.y, self.z = self.forward_kin(self.a_coxa, self.a_femur, self.a_tibia)
+        
 
-    def forward_kin(self, a_coxa, a_femur, a_tibia):
+    def FKSolve(self, a_coxa, a_femur, a_tibia):
         """Forward kinematics calculation to find location of leg tip. Angles are given in degrees"""
         #Temporary angle for calculations
         A1 = (a_tibia + 30) - (90 - a_femur)
@@ -142,15 +137,16 @@ class hexleg(object):
 
         return x, y, z
 
-    def inverse_kin(self, x, y, z):
+    def IKSolve(self, x, y, z):
         #equations taken from blog post by user downeym here: https://www.robotshop.com/community/forum/t/inverse-kinematic-equations-for-lynxmotion-3dof-legs/21336
-        legLength = math.sqrt((x**2) + (y**2))
-        HF = math.sqrt((legLength - self.COXA_LENGTH)**2 + (self.z**2))
-        A1 = math.degrees(math.atan2(legLength - self.COXA_LENGTH, self.z))
-        A2 = math.degrees(math.acos((self.TIBIA_LENGTH**2 - self.FEMUR_LENGTH**2 - HF**2)/(-2* self.FEMUR_LENGTH * HF)))
-        B1 = math.degrees(math.acos((HF**2 - self.TIBIA_LENGTH**2 - self.FEMUR_LENGTH**2)/(-2* self.FEMUR_LENGTH * self.TIBIA_LENGTH)))
         try:
-            a_tibia = (B1 - 30)
+            legLength = math.sqrt((x**2) + (y**2))
+            HF = math.sqrt((legLength - self.COXA_LENGTH)**2 + (self.z**2))
+            A1 = math.degrees(math.atan2(legLength - self.COXA_LENGTH, self.z))
+            A2 = math.degrees(math.acos((self.TIBIA_LENGTH**2 - self.FEMUR_LENGTH**2 - HF**2)/(-2* self.FEMUR_LENGTH * HF)))
+            B1 = math.degrees(math.acos((HF**2 - self.TIBIA_LENGTH**2 - self.FEMUR_LENGTH**2)/(-2* self.FEMUR_LENGTH * self.TIBIA_LENGTH)))
+
+            a_tibia = (B1 - 35)
             a_femur = (A1 + A2) 
             a_coxa = math.degrees(math.atan2(y, x))
             if self.isInverted:
@@ -178,7 +174,7 @@ class hexleg(object):
         else:
             new_angle = move_angle
 
-        self.coxa_servo.angle = new_angle
+        self.femur_servo.angle = new_angle
 
     def run_tibia_angle(self, move_angle):
         """Runs to a target angle for a given servo"""
@@ -189,12 +185,3 @@ class hexleg(object):
 
         self.tibia_servo.angle = new_angle
 
-    def interpolate_time(self, speed, numSteps):
-        """interpolates between two delay times for smooth movement using cubic spline intrpolation"""
-        time_steps = [0, numSteps/2, numSteps]
-        delay_time = [0.005*speed, 0.01*speed, 0.005*speed]
-        delayInterpolation = CubicSpline(time_steps, delay_time)
-        delay_time = []
-        for n in range(numSteps):
-            delay_time.append(delayInterpolation(n))
-        return delay_time
