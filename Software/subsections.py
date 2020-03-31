@@ -72,14 +72,6 @@ class body(object):
                         }
         self.gaitID = 'Tripod' #Tripod is default gait
 
-    def bodyIK(self):
-        x = self.bodyPos_x
-        y = self.bodyPos_y
-        z = self.bodyPos_z
-        rx = self.bodyRot_x
-        ry = self.bodyRot_y
-        rz = self.bodyRot_z
-
     def gaitSelect(self):
         if self.gaitType < 2:
             self.gaitType += 1
@@ -107,10 +99,10 @@ class hexleg(object):
         #Set initial values for robot startup
         self.a_coxa = 90
         self.a_femur = 0
-        self.a_tibia = 90
+        self.a_tibia = 180
         self.isInverted = isInverted
         
-        if not isInverted:
+        if isInverted:
             self.servo_index = [self.legIndex*3, self.legIndex*3 + 1, self.legIndex*3 + 2]
         else:
             self.servo_index = [(self.legIndex-3)*3, (self.legIndex-3)*3 + 1, (self.legIndex-3)*3 + 2]
@@ -132,24 +124,44 @@ class hexleg(object):
         self.run_femur_angle(self.a_femur)
         self.run_tibia_angle(self.a_tibia)
 
+        self.x, self.y, self.z = self.forward_kin(self.a_coxa, self.a_femur, self.a_tibia)
+
+    def forward_kin(self, a_coxa, a_femur, a_tibia):
+        """Forward kinematics calculation to find location of leg tip. Angles are given in degrees"""
+        #Temporary angle for calculations
+        A1 = (a_tibia + 30) - (90 - a_femur)
+
+        #Convert degrees to radians
+        a_coxa = math.radians(a_coxa)
+        a_femur = math.radians(a_femur)
+        A1 = math.radians(A1)
+
+        x = (self.COXA_LENGTH + (self.FEMUR_LENGTH * math.cos(a_femur)) + (self.TIBIA_LENGTH * math.sin(A1))) * math.cos(a_coxa)
+        y = (self.COXA_LENGTH + (self.FEMUR_LENGTH * math.cos(a_femur)) + (self.TIBIA_LENGTH * math.sin(A1))) * math.sin(a_coxa)
+        z = self.TIBIA_LENGTH * math.cos(A1) - self.FEMUR_LENGTH * math.sin(a_femur)
+
+        return x, y, z
+
     def inverse_kin(self, x, y, z):
         #equations taken from blog post by user downeym here: https://www.robotshop.com/community/forum/t/inverse-kinematic-equations-for-lynxmotion-3dof-legs/21336
         legLength = math.sqrt((x**2) + (y**2))
-        HF = math.sqrt((legLength - COXA_LENGTH)**2 + (self.z**2))
-        A1 = math.degrees(math.atan2(legLength - COXA_LENGTH, self.z))
-        A2 = math.degrees(math.acos((TIBIA_LENGTH**2 - FEMUR_LENGTH**2 - HF**2)/(-2* FEMUR_LENGTH * HF)))
-        B1 = math.degrees(math.acos((HF**2 - TIBIA_LENGTH**2 - FEMUR_LENGTH**2)/(-2* FEMUR_LENGTH * TIBIA_LENGTH)))
-
-        a_tibia = 90 - B1 + 90
-        a_femur = 90 - (A1 + A2) + 90
-        a_coxa = math.degrees(math.atan2(y, x))
-        if self.isInverted:
-            a_tibia = 180 - a_tibia
-            a_femur = 180 - a_femur
-            a_coxa = 180 - a_coxa
-
-        return a_tibia, a_femur, a_coxa
-
+        HF = math.sqrt((legLength - self.COXA_LENGTH)**2 + (self.z**2))
+        A1 = math.degrees(math.atan2(legLength - self.COXA_LENGTH, self.z))
+        A2 = math.degrees(math.acos((self.TIBIA_LENGTH**2 - self.FEMUR_LENGTH**2 - HF**2)/(-2* self.FEMUR_LENGTH * HF)))
+        B1 = math.degrees(math.acos((HF**2 - self.TIBIA_LENGTH**2 - self.FEMUR_LENGTH**2)/(-2* self.FEMUR_LENGTH * self.TIBIA_LENGTH)))
+        try:
+            a_tibia = (B1 - 30)
+            a_femur = (A1 + A2) 
+            a_coxa = math.degrees(math.atan2(y, x))
+            if self.isInverted:
+                a_tibia = 180 - a_tibia
+                a_femur = 180 - a_femur
+                a_coxa = 180 - a_coxa
+            return a_tibia, a_femur, a_coxa
+        except:
+            print("Inverse Kinematics Failed!")
+            pass
+        
     def run_coxa_angle(self, move_angle):
         """Runs to a target angle for a given servo"""
         if self.isInverted:
@@ -176,7 +188,6 @@ class hexleg(object):
             new_angle = move_angle
 
         self.tibia_servo.angle = new_angle
-
 
     def interpolate_time(self, speed, numSteps):
         """interpolates between two delay times for smooth movement using cubic spline intrpolation"""
