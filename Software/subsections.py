@@ -164,42 +164,37 @@ class hexleg(object):
 
     def FKSolve(self, a_coxa, a_femur, a_tibia):
         """Forward kinematics calculation to find location of leg tip. Angles are given in degrees"""
-        #Temporary angle for calculations
-        A1 = (a_tibia + 35) - (90 - a_femur)
-        #Convert degrees to radians
+        #temporary angle for calculation
+        temp_ang = a_tibia - (90 - (a_femur - 90))
+        print(temp_ang)
+        #Convert to radians
         a_coxa = math.radians(a_coxa)
-        a_femur = math.radians(a_femur)
-        A1 = math.radians(A1)
-
-        x = (self.COXA_LENGTH + (self.FEMUR_LENGTH * math.cos(a_femur)) + (self.TIBIA_LENGTH * math.sin(A1))) * math.cos(a_coxa)
-        y = (self.COXA_LENGTH + (self.FEMUR_LENGTH * math.cos(a_femur)) + (self.TIBIA_LENGTH * math.sin(A1))) * math.sin(a_coxa)
-        z = self.TIBIA_LENGTH * math.cos(A1) - self.FEMUR_LENGTH * math.sin(a_femur)
-        return x, y, z
+        a_femur = math.radians(a_femur - 90)
+        temp_ang = math.radians(temp_ang)
+        x = (self.COXA_LENGTH + (self.FEMUR_LENGTH * math.cos(a_femur)) + (self.TIBIA_LENGTH *math.sin(temp_ang))) * math.cos(a_coxa)
+        y = (self.COXA_LENGTH + (self.FEMUR_LENGTH * math.cos(a_femur)) + (self.TIBIA_LENGTH *math.sin(temp_ang))) * math.sin(a_coxa)
+        z = (self.TIBIA_LENGTH * math.cos(temp_ang)) - (self.FEMUR_LENGTH * math.sin(a_femur))  
+        return round(x), round(y), round(z)
 
     def IKSolve(self, x, y, z):
         #equations taken from blog post by user downeym here: https://www.robotshop.com/community/forum/t/inverse-kinematic-equations-for-lynxmotion-3dof-legs/21336
-        z = - z
-        
         try:
-            legLength = math.sqrt((x**2) + (y**2))
-            print(legLength)
-            HF = math.sqrt(((legLength - self.COXA_LENGTH)**2) + (z**2))
-            A1 = math.degrees(math.atan2(legLength - self.COXA_LENGTH, z))
-            A2 = math.degrees(math.acos((self.TIBIA_LENGTH**2 - self.FEMUR_LENGTH**2 - HF**2)/(-2* self.FEMUR_LENGTH * HF)))
-            B1 = math.degrees(math.acos(((HF**2) - self.TIBIA_LENGTH**2 - self.FEMUR_LENGTH**2)/(-2* self.FEMUR_LENGTH * self.TIBIA_LENGTH)))
+            legLength = math.sqrt(x**2 + y**2)
+            HF = math.sqrt((legLength - self.COXA_LENGTH)**2 + z**2)
+            A1 = math.atan2(legLength - self.COXA_LENGTH, z)
+            A2 = math.acos((self.TIBIA_LENGTH**2 - self.FEMUR_LENGTH**2 - HF**2)/(-2 * self.FEMUR_LENGTH * HF))
+            B1 = math.acos((HF**2 - self.TIBIA_LENGTH**2 - self.FEMUR_LENGTH**2)/(-2 * self.FEMUR_LENGTH * self.TIBIA_LENGTH))
+            C1 = math.atan2(y, x)
+            
+            #Convert to servo reference frame and solve for final angles
+            a_coxa = math.degrees(C1)
+            a_femur = math.degrees(A1 + A2) 
+            a_tibia = math.degrees(B1)
 
-            a_tibia = (B1 - 35)
-            a_femur = (A1 + A2) 
-            a_coxa = math.degrees(math.atan2(y, x))
-            if self.isInverted:
-                a_tibia = 180 - a_tibia
-                a_femur = 180 - a_femur
-                a_coxa = 180 - a_coxa
             return a_coxa, a_femur, a_tibia
         except Exception as e:
             print(e)
-            print("Inverse Kinematics Failed!")
-            
+            return self.a_coxa, self.a_femur, self.a_tibia
         
     def run_angle(self, move_angle, servo_index):
         """Runs to a target angle for a given servo"""
