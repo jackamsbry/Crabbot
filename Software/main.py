@@ -25,7 +25,6 @@ class bezier2d():
         y = self.ypoints
 
         numPoints = len(self.xpoints)
-
         for i in range(numPoints-1):
             for j in range(numPoints-i-1):
                 x[j] = (1-t)*x[j] + t*x[j+1]
@@ -36,7 +35,7 @@ class bezier2d():
 class crabbot():
     MINTURNRAD = 609.6/2
 
-    def __init__(self, legs, body):
+    def __init__(self, legs, body, debug=False):
         self.legs = legs
         self.body = body
 
@@ -50,11 +49,14 @@ class crabbot():
 
         #State variables
         self.isMoving = False
+
+        #Debugging?
+        self.debug = debug
     
     def interpolate_time(self, speed, numSteps):
             """interpolates between two delay times for smooth movement using cubic spline intrpolation"""
             time_steps = [0, numSteps/2, numSteps]
-            delay_time = [0.005*speed, 0.1*speed, 0.005*speed]
+            delay_time = [0.05*speed, 0.01*speed, 0.05*speed]
             delayInterpolation = CubicSpline(time_steps, delay_time)
             delay_time = []
             for n in range(numSteps):
@@ -71,12 +73,13 @@ class crabbot():
 
         move_t = np.linspace(0, 1, num=numPoints)
         t = np.linspace(0,(1/(numSteps-1)), num=numPoints)
-        
         move_pos = []
         push_pos = []
-
-        move_pos = self.moveCurve.getPos(x for x in move_t)
-        push_pos = self.pushCurve.getPos(x for x in t)
+        for x in move_t:
+            move_pos.append(self.moveCurve.getPos(x))
+        
+        for x in t:
+            push_pos.append(self.pushCurve.getPos(x))
 
         self.isMoving = True
         
@@ -89,18 +92,18 @@ class crabbot():
                     current_pos = push_pos[i]
 
                 
-                leg.x_new = leg.x
-                leg.y_new = current_pos[0]
-                leg.z_new = current_pos[1]
+                leg.x_new = leg.x + current_pos[0]
+                leg.y_new = leg.y 
+                leg.z_new = leg.z + current_pos[1]
 
                 #Body inverse kinematics
-                dLegs = self.body.IKSolve()
-                dLeg = dLegs[index]
-
+                # dLegs = self.body.IKSolve()
+                # dLeg = dLegs[index]
+                
                 #Update leg position with body transformations
-                leg.x_new += dLeg[0]
-                leg.y_new += dLeg[1]
-                leg.z_new += dLeg[2]
+                # leg.x_new += dLeg[0]
+                # leg.y_new += dLeg[1]
+                # leg.z_new += dLeg[2]
                 
                 #Inverse kinematic calculation for leg position
                 a_coxa, a_femur, a_tibia = leg.IKSolve(leg.x_new, leg.y_new, leg.z_new)
@@ -112,7 +115,17 @@ class crabbot():
                 time.sleep(delayTime[i])
                 leg.run_angle(a_tibia, 2)   
                 time.sleep(delayTime[i])
+
+                leg.a_coxa = a_coxa
+                leg.a_femur = a_femur
+                leg.a_tibia = a_tibia
+
+        for leg in self.legs:
+            leg.x = leg.x_new
+            leg.y = leg.y_new
+            leg.z = leg.z_new
         
+
         self.isMoving = False
 
     def interpolate_angle(self, speed, numSteps, joint, angle):
@@ -155,51 +168,41 @@ class crabbot():
         self.pushCurve.addPoint(-x0, 0)
         self.pushCurve.addPoint(x0, 0)
 
-    def stand_angle(self):
-        numPoints = 25
-        startAngle = 120
-
-        delayTime = self.interpolate_time(10, numPoints)
-
-        self.isMoving = True
-
-        for index, leg in enumerate(self.legs):
-            leg.a_coxa_new = startAngle - index * 30
-            leg.a_femur_new = 150
-            leg.a_tibia_new = 135
-            leg.x_new, leg.y_new, leg.z_new = leg.FKSolve(leg.a_coxa_new, leg.a_femur_new, leg.a_tibia_new)
-            xMove = np.linspace(leg.x, leg.x_new, num=numPoints)
-            yMove = np.linspace(leg.y, leg.y_new, num=numPoints)
-            zMove = np.linspace(leg.z, leg.z_new, num=numPoints)
-            for i in range(numPoints):
-                #Body inverse kinematics
-                dLegs = self.body.IKSolve()
-                dLeg = dLegs[index]
-
-                #Update leg position with body transformations
-                x = xMove[i] + dLeg[0]
-                y = yMove[i] + dLeg[1]
-                z = zMove[i] + dLeg[2]
-
-                #Inverse kinematic calculation for leg position
-                a_coxa, a_femur, a_tibia = leg.IKSolve(x, y, z)
-
-                #Run the servos to calculated angles
-                leg.run_angle(a_coxa, 0)
-                leg.run_angle(a_femur, 1)
-                leg.run_angle(a_tibia, 2)   
-                time.sleep(delayTime[i])
-            
-        self.isMoving = False
-    
     def stand(self):
-        pass
+        numPoints = 20
+        startAngle = 60
+
+        delayTime = self.interpolate_time(0.5, numPoints)
+        
+        self. isMoving = True
+        for i in range(numPoints):
+            for j in range(3):
+                for index, leg in enumerate(self.legs):
+                    if index < 3:
+                        leg.a_coxa_new = startAngle + index * 30
+                    else:
+                        leg.a_coxa_new = startAngle + (index - 3) * 30
+                    leg.a_femur_new = 150
+                    leg.a_tibia_new = 30
+                    coxa_angles = np.linspace(leg.a_coxa, leg.a_coxa_new, num=numPoints)
+                    femur_angles = np.linspace(leg.a_femur, leg.a_femur_new, num=numPoints)
+                    tibia_angles = np.linspace(leg.a_tibia, leg.a_tibia_new, num=numPoints)
+                        
+                    #Run the servos to calculated angles
+                    if j == 0:
+                        leg.run_angle(coxa_angles[i], j)
+                    elif j == 1:
+                        leg.run_angle(femur_angles[i], j)
+                    else:
+                        leg.run_angle(tibia_angles[i], j)
+                    leg.x, leg.y, leg.z = leg.FKSolve(leg.a_coxa_new, leg.a_femur_new, leg.a_tibia_new)
+                    
+            time.sleep(delayTime[i])
+                
 
     def sit(self, numPoints = 25):
         #Calculate leg end positions
         pass
-        
-
 
 if __name__ == "__main__":
     """Main function for testing servo movement and gaits"""
@@ -222,12 +225,12 @@ if __name__ == "__main__":
     body = body()
 
     #Instantiate robot control class
-    bot = crabbot(legs, body)
+    bot = crabbot(legs, body, debug=True)
     #Wait for 1.5 seconds so servos are in correct location
     time.sleep(1.5)
     #Set initial leg positions
     bot.stand()
     time.sleep(1)
     print("Done!")
-    
-        
+
+    bot.interpolate_step(1)

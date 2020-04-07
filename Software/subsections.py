@@ -166,7 +166,6 @@ class hexleg(object):
         """Forward kinematics calculation to find location of leg tip. Angles are given in degrees"""
         #Temporary angle for calculations
         A1 = (a_tibia + 35) - (90 - a_femur)
-
         #Convert degrees to radians
         a_coxa = math.radians(a_coxa)
         a_femur = math.radians(a_femur)
@@ -175,18 +174,19 @@ class hexleg(object):
         x = (self.COXA_LENGTH + (self.FEMUR_LENGTH * math.cos(a_femur)) + (self.TIBIA_LENGTH * math.sin(A1))) * math.cos(a_coxa)
         y = (self.COXA_LENGTH + (self.FEMUR_LENGTH * math.cos(a_femur)) + (self.TIBIA_LENGTH * math.sin(A1))) * math.sin(a_coxa)
         z = self.TIBIA_LENGTH * math.cos(A1) - self.FEMUR_LENGTH * math.sin(a_femur)
-
         return x, y, z
 
     def IKSolve(self, x, y, z):
         #equations taken from blog post by user downeym here: https://www.robotshop.com/community/forum/t/inverse-kinematic-equations-for-lynxmotion-3dof-legs/21336
+        z = - z
+        
         try:
-            z = -z
             legLength = math.sqrt((x**2) + (y**2))
-            HF = math.sqrt((legLength - self.COXA_LENGTH)**2 + (z**2))
+            print(legLength)
+            HF = math.sqrt(((legLength - self.COXA_LENGTH)**2) + (z**2))
             A1 = math.degrees(math.atan2(legLength - self.COXA_LENGTH, z))
             A2 = math.degrees(math.acos((self.TIBIA_LENGTH**2 - self.FEMUR_LENGTH**2 - HF**2)/(-2* self.FEMUR_LENGTH * HF)))
-            B1 = math.degrees(math.acos((HF**2 - self.TIBIA_LENGTH**2 - self.FEMUR_LENGTH**2)/(-2* self.FEMUR_LENGTH * self.TIBIA_LENGTH)))
+            B1 = math.degrees(math.acos(((HF**2) - self.TIBIA_LENGTH**2 - self.FEMUR_LENGTH**2)/(-2* self.FEMUR_LENGTH * self.TIBIA_LENGTH)))
 
             a_tibia = (B1 - 35)
             a_femur = (A1 + A2) 
@@ -196,9 +196,10 @@ class hexleg(object):
                 a_femur = 180 - a_femur
                 a_coxa = 180 - a_coxa
             return a_coxa, a_femur, a_tibia
-        except:
+        except Exception as e:
+            print(e)
             print("Inverse Kinematics Failed!")
-            pass
+            
         
     def run_angle(self, move_angle, servo_index):
         """Runs to a target angle for a given servo"""
