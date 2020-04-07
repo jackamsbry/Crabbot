@@ -27,57 +27,97 @@ from adafruit_servokit import ServoKit
 import time, math
 import numpy as np
 from scipy.interpolate import CubicSpline
+from enum import IntEnum
+
 
 class body(object):
     """this object holds all state information and computes inverse kinematics for robot body""" 
-    def __init__(self, blength, bwidth, boffset):
-        """parameters of the robot body"""
-        self.length = blength
-        self.width = bwidth
-        self.offset = boffset
+    BODYLENGTH = 209.55
+    BODYWIDTH = 184.15
+    BODYOFFSET = 12.7
 
+    def __init__(self):
+        """parameters of the robot body"""
         #initialize body position
         self.bodyPos_x = 0
         self.bodyPos_y = 0
         self.bodyPos_z = 0
 
         #initialize body rotation
-        self.bodyRot_x = 0 #pitch
-        self.bodyRot_y = 0 #roll
+        self.bodyRot_x = 0 #roll
+        self.bodyRot_y = 0 #pitch
         self.bodyRot_z = 0 #yaw
 
         #gaits
-        self.gaitType = 0
+        self.gaitIndex = 0
         self.gaitStep = 0
-        self.gaits = {
-            'Tripod' : [(1, 0, 1, 0, 1, 0), \
-                        (0, 1, 0, 1, 0, 1)], \
-            'Ripple' : [(1, 0, 0, 0, 0, 1), \
-                        (0, 0, 1, 0, 1, 0), \
-                        (0, 1, 0, 1, 0, 0)], \
-            'Wave'   : [(1, 0, 0, 0, 0, 0),\
-                        (0, 1, 0, 0, 0, 0),\
-                        (0, 0, 1, 0, 0, 0),\
-                        (0, 0, 0, 1, 0, 0),\
-                        (0, 0, 0, 0, 1, 0),\
-                        (0, 0, 0, 0, 0, 1)]
-                        }
-        self.gaitID = 'Tripod' #Tripod is default gait
+        self.gaits = [
+           [(1, 0, 1, 0, 1, 0),\
+            (0, 1, 0, 1, 0, 1)],\
+            [(1, 0, 0, 0, 0, 1),\
+            (0, 0, 1, 0, 1, 0),\
+            (0, 1, 0, 1, 0, 0)],\
+            [(1, 0, 0, 0, 0, 0),\
+            (0, 1, 0, 0, 0, 0),\
+            (0, 0, 1, 0, 0, 0),\
+            (0, 0, 0, 1, 0, 0),\
+            (0, 0, 0, 0, 1, 0),\
+            (0, 0, 0, 0, 0, 1)]
+        ]  #Tripod, Ripple, Wave
+                        
+        self.gaitCurrent = self.gaits[0] #Tripod is default gait
 
     def gaitSelect(self):
-        if self.gaitType < 2:
-            self.gaitType += 1
+        if self.gaitIndex < 2:
+            self.gaitIndex += 1
         else:
-            self.gaitType = 0
+            self.gaitIndex = 0
 
-    def gaitSeq(self):
-        """build the gait sequence"""
-        if self.gaitType == 0:
-            self.gaitID = 'Tripod'
-        elif self.gaitType == 1:
-            self.gaitID = 'Ripple'
+        self.gaitCurrent = self.gaits[self.gaitIndex]
+
+    def gaitIncrement(self):
+        if self.gaitStep < (len(self.gaitCurrent)-1):
+            self.gaitStep += 1
         else:
-            self.gaitID = 'Wave'
+            self.gaitStep = 0
+
+    def IKSolve(self):
+        #x distance to front and back motors from center of body
+        fbMotorDist = (self.BODYWIDTH/2) - self.BODYOFFSET
+        mMotorDist = self.BODYWIDTH/2
+        yDist = self.BODYLENGTH/2
+        fbMotorRad = math.sqrt(fbMotorDist**2 + yDist**2)
+
+        #Convert rotation angles to radians for calculations
+        pitch = math.radians(self.bodyRot_x) #Rotation about x axis
+        roll = math.radians(self.bodyRot_y) #Rotation about y axis
+        yaw = math.radians(self.bodyRot_z) #Rotation about z axis
+
+        #Change in x, y, z points of motors using rotation matrix
+        lf = [fbMotorDist * math.cos(roll) + fbMotorRad * math.sin(yaw) - self.bodyPos_x,\
+            yDist * math.cos(pitch) + fbMotorRad * math.cos(yaw) - self.bodyPos_y,\
+            fbMotorDist * math.sin(roll) + yDist * math.sin(pitch) - self.bodyPos_z]
+        lm = [mMotorDist * math.cos(roll) + mMotorDist * math.sin(yaw) - self.bodyPos_x,\
+            yDist * math.cos(pitch) + mMotorDist * math.cos(yaw) - self.bodyPos_y,\
+            mMotorDist * math.sin(roll) + yDist * math.sin(pitch) - self.bodyPos_z]
+        lb = [fbMotorDist * math.cos(roll) + fbMotorRad * math.sin(yaw) - self.bodyPos_x,\
+            -yDist * math.cos(pitch) + fbMotorRad * math.cos(yaw) - self.bodyPos_y,\
+            fbMotorDist * math.sin(roll) + -yDist * math.sin(pitch) - self.bodyPos_z]
+
+        rf = [-fbMotorDist * math.cos(roll) - fbMotorRad * math.sin(yaw) - self.bodyPos_x,\
+            yDist * math.cos(pitch) - fbMotorRad * math.cos(yaw) - self.bodyPos_y,\
+            -fbMotorDist * math.sin(roll) + yDist * math.sin(pitch) - self.bodyPos_z]
+        rm = [mMotorDist * math.cos(roll) - mMotorDist * math.sin(yaw) - self.bodyPos_x,\
+            yDist * math.cos(pitch) - mMotorDist * math.cos(yaw) - self.bodyPos_y,\
+            mMotorDist * math.sin(roll) + yDist * math.sin(pitch) - self.bodyPos_z]
+        rb = [-fbMotorDist * math.cos(roll) - fbMotorRad * math.sin(yaw) - self.bodyPos_x,\
+            -yDist * math.cos(pitch) - fbMotorRad * math.cos(yaw) - self.bodyPos_y,\
+            -fbMotorDist * math.sin(roll) + -yDist * math.sin(pitch) - self.bodyPos_z]
+
+        dLegs = [lf, lm, lb, rf, rm, rb]
+
+        return dLegs
+
 
 class hexleg(object):
     """object to calculate inverse kinematics for 3dof hexapod leg and control servo motion"""
@@ -90,14 +130,15 @@ class hexleg(object):
         self.legIndex = legIndex
         #Set initial values for robot startup
         self.a_coxa = 90
-        self.a_femur = 150
-        self.a_tibia = 180
+        self.a_femur = 180
+        self.a_tibia = 90
         self.isInverted = isInverted
-
+        self.path = "none"
         self.a_coxa_new = 0
         self.a_femur_new = 0
         self.a_tibia_new = 0
         
+        #Put each servos index on the servo driver into a list
         if isInverted:
             self.servo_index = [self.legIndex*3, self.legIndex*3 + 1, self.legIndex*3 + 2]
         else:
@@ -107,6 +148,7 @@ class hexleg(object):
         self.coxa_servo = ServoKit.servo[self.servo_index[0]]
         self.femur_servo = ServoKit.servo[self.servo_index[1]]
         self.tibia_servo = ServoKit.servo[self.servo_index[2]]
+        self.servos = [self.coxa_servo, self.femur_servo, self.tibia_servo]
 
         #Initialize variables for inverse kinematics
         self.x, self.y, self.z = self.FKSolve(self.a_coxa, self.a_femur, self.a_tibia)
@@ -115,16 +157,15 @@ class hexleg(object):
         self.y_new = 0
         self.z_new = 0
 
-        self.run_coxa_angle(self.a_coxa)
-        self.run_femur_angle(self.a_femur)
-        self.run_tibia_angle(self.a_tibia)
-
-        
+        self.run_angle(self.a_coxa, 0)
+        self.run_angle(self.a_femur, 1)
+        self.run_angle(self.a_tibia, 2)
+        time.sleep(.25)
 
     def FKSolve(self, a_coxa, a_femur, a_tibia):
         """Forward kinematics calculation to find location of leg tip. Angles are given in degrees"""
         #Temporary angle for calculations
-        A1 = (a_tibia + 30) - (90 - a_femur)
+        A1 = (a_tibia + 35) - (90 - a_femur)
 
         #Convert degrees to radians
         a_coxa = math.radians(a_coxa)
@@ -140,9 +181,10 @@ class hexleg(object):
     def IKSolve(self, x, y, z):
         #equations taken from blog post by user downeym here: https://www.robotshop.com/community/forum/t/inverse-kinematic-equations-for-lynxmotion-3dof-legs/21336
         try:
+            z = -z
             legLength = math.sqrt((x**2) + (y**2))
-            HF = math.sqrt((legLength - self.COXA_LENGTH)**2 + (self.z**2))
-            A1 = math.degrees(math.atan2(legLength - self.COXA_LENGTH, self.z))
+            HF = math.sqrt((legLength - self.COXA_LENGTH)**2 + (z**2))
+            A1 = math.degrees(math.atan2(legLength - self.COXA_LENGTH, z))
             A2 = math.degrees(math.acos((self.TIBIA_LENGTH**2 - self.FEMUR_LENGTH**2 - HF**2)/(-2* self.FEMUR_LENGTH * HF)))
             B1 = math.degrees(math.acos((HF**2 - self.TIBIA_LENGTH**2 - self.FEMUR_LENGTH**2)/(-2* self.FEMUR_LENGTH * self.TIBIA_LENGTH)))
 
@@ -153,35 +195,16 @@ class hexleg(object):
                 a_tibia = 180 - a_tibia
                 a_femur = 180 - a_femur
                 a_coxa = 180 - a_coxa
-            return a_tibia, a_femur, a_coxa
+            return a_coxa, a_femur, a_tibia
         except:
             print("Inverse Kinematics Failed!")
             pass
         
-    def run_coxa_angle(self, move_angle):
+    def run_angle(self, move_angle, servo_index):
         """Runs to a target angle for a given servo"""
         if self.isInverted:
             new_angle = 180 - move_angle
         else:
             new_angle = move_angle
 
-        self.coxa_servo.angle = new_angle
-
-    def run_femur_angle(self, move_angle):
-        """Runs to a target angle for a given servo"""
-        if self.isInverted:
-            new_angle = 180 - move_angle
-        else:
-            new_angle = move_angle
-
-        self.femur_servo.angle = new_angle
-
-    def run_tibia_angle(self, move_angle):
-        """Runs to a target angle for a given servo"""
-        if self.isInverted:
-            new_angle = 180 - move_angle
-        else:
-            new_angle = move_angle
-
-        self.tibia_servo.angle = new_angle
-
+        self.servos[servo_index].angle = new_angle
