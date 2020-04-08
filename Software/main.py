@@ -5,7 +5,7 @@ import time, math
 import numpy as np
 from scipy.interpolate import CubicSpline
 from subsections import hexleg, body
-
+import copy
 
 class bezier2d():
     def __init__(self):
@@ -16,13 +16,13 @@ class bezier2d():
         self.xpoints.append(x)
         self.ypoints.append(y)
 
-    def editPoint(self, x, y, point):
-        self.xpoints[point] = x
-        self.ypoints[point] = y
+    def editPoint(self, x, y, pointNum):
+        self.xpoints[pointNum] = x
+        self.ypoints[pointNum] = y
 
     def getPos(self, t):
-        x = self.xpoints
-        y = self.ypoints
+        x = copy.deepcopy(self.xpoints)
+        y = copy.deepcopy(self.ypoints)
 
         numPoints = len(self.xpoints)
         for i in range(numPoints-1):
@@ -48,6 +48,7 @@ class crabbot():
         self.turnRad = 100000 #Large number so effectively straight motion for default direction
 
         #State variables
+        self.wasMoving = False
         self.isMoving = False
 
         #Debugging?
@@ -63,7 +64,7 @@ class crabbot():
                 delay_time.append(delayInterpolation(n))
             return delay_time
 
-    def interpolate_step(self, speed, numPoints=25):
+    def interpolate_step(self, speed, numPoints=100):
         """Interpolates between motors for smooth movement for a single gait step"""
         gait = self.body.gaitCurrent
         numSteps = len(gait)
@@ -85,16 +86,18 @@ class crabbot():
         
         for i in range(numPoints):
             for index, leg in enumerate(self.legs):
+                
                 if stepCurrent[index] == 1:
                     current_pos = move_pos[i]
 
                 elif stepCurrent[index] == 0:
                     current_pos = push_pos[i]
+                if not self.wasMoving:
+                    leg.run_position(current_pos[0], leg.y_init, current_pos[1])
 
-                
-                leg.x_new = leg.x + current_pos[0]
-                leg.y_new = leg.y 
-                leg.z_new = leg.z + current_pos[1]
+                leg.x_new = leg.x_init - current_pos[0]
+                leg.y_new = leg.y_init 
+                leg.z_new = leg.z_init - current_pos[1]
 
                 #Body inverse kinematics
                 # dLegs = self.body.IKSolve()
@@ -110,22 +113,23 @@ class crabbot():
                 
                 #Run the servos to calculated angles
                 leg.run_angle(a_coxa, 0)
-                time.sleep(delayTime[i])
                 leg.run_angle(a_femur, 1)
-                time.sleep(delayTime[i])
                 leg.run_angle(a_tibia, 2)   
-                time.sleep(delayTime[i])
+                
 
                 leg.a_coxa = a_coxa
                 leg.a_femur = a_femur
                 leg.a_tibia = a_tibia
 
+                self.wasMoving = True
+                time.sleep(0.002)
+            time.sleep(0.002)
         for leg in self.legs:
             leg.x = leg.x_new
             leg.y = leg.y_new
             leg.z = leg.z_new
         
-
+        
         self.isMoving = False
 
     def interpolate_angle(self, speed, numSteps, joint, angle):
@@ -156,9 +160,9 @@ class crabbot():
                 time.sleep(delayTime[i])
 
     def curve_init(self):
-        x0 = 25
+        x0 = 50
         x1 = 2.5 * x0
-        y = 150
+        y = 250
         self.moveCurve.addPoint(x0, 0)
         self.moveCurve.addPoint(x1, 0)
         self.moveCurve.addPoint(0, y)
@@ -176,28 +180,27 @@ class crabbot():
         
         self. isMoving = True
         for i in range(numPoints):
-            for j in range(3):
-                for index, leg in enumerate(self.legs):
-                    if index < 3:
-                        leg.a_coxa_new = startAngle + index * 30
-                    else:
-                        leg.a_coxa_new = startAngle + (index - 3) * 30
-                    leg.a_femur_new = 150
-                    leg.a_tibia_new = 30
-                    coxa_angles = np.linspace(leg.a_coxa, leg.a_coxa_new, num=numPoints)
-                    femur_angles = np.linspace(leg.a_femur, leg.a_femur_new, num=numPoints)
-                    tibia_angles = np.linspace(leg.a_tibia, leg.a_tibia_new, num=numPoints)
-                        
-                    #Run the servos to calculated angles
-                    if j == 0:
-                        leg.run_angle(coxa_angles[i], j)
-                    elif j == 1:
-                        leg.run_angle(femur_angles[i], j)
-                    else:
-                        leg.run_angle(tibia_angles[i], j)
-                    leg.x, leg.y, leg.z = leg.FKSolve(leg.a_coxa_new, leg.a_femur_new, leg.a_tibia_new)
+            for index, leg in enumerate(self.legs):
+                if index < 3:
+                    leg.a_coxa_new = startAngle + index * 30
+                else:
+                    leg.a_coxa_new = startAngle + (index - 3) * 30
+                leg.a_femur_new = 120
+                leg.a_tibia_new = 50
+                coxa_angles = np.linspace(leg.a_coxa, leg.a_coxa_new, num=numPoints)
+                femur_angles = np.linspace(leg.a_femur, leg.a_femur_new, num=numPoints)
+                tibia_angles = np.linspace(leg.a_tibia, leg.a_tibia_new, num=numPoints)
                     
-            time.sleep(delayTime[i])
+                #Run the servos to calculated angles
+                leg.run_angle(coxa_angles[i], 0)
+                leg.run_angle(femur_angles[i], 1)
+                leg.run_angle(tibia_angles[i], 2)
+                leg.x_init, leg.y_init, leg.z_init = leg.FKSolve(leg.a_coxa_new, leg.a_femur_new, leg.a_tibia_new)
+                leg.a_coxa = leg.a_coxa_new
+                leg.a_femur = leg.a_femur_new
+                leg.a_tibia = leg.a_tibia_new
+                time.sleep(0.005)   
+            time.sleep(0.1)
                 
 
     def sit(self, numPoints = 25):
@@ -230,7 +233,8 @@ if __name__ == "__main__":
     time.sleep(1.5)
     #Set initial leg positions
     bot.stand()
-    time.sleep(1)
-    print("Done!")
-
-    bot.interpolate_step(1)
+    time.sleep(2.5)
+    for i in range(15):
+        bot.interpolate_step(1)
+        bot.body.gaitIncrement()
+   

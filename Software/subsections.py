@@ -156,6 +156,9 @@ class hexleg(object):
         self.x_new = 0
         self.y_new = 0
         self.z_new = 0
+        self.x_init = 0
+        self.y_init = 0
+        self.z_init = 0
 
         self.run_angle(self.a_coxa, 0)
         self.run_angle(self.a_femur, 1)
@@ -166,7 +169,7 @@ class hexleg(object):
         """Forward kinematics calculation to find location of leg tip. Angles are given in degrees"""
         #temporary angle for calculation
         temp_ang = a_tibia - (90 - (a_femur - 90))
-        print(temp_ang)
+        
         #Convert to radians
         a_coxa = math.radians(a_coxa)
         a_femur = math.radians(a_femur - 90)
@@ -174,7 +177,7 @@ class hexleg(object):
         x = (self.COXA_LENGTH + (self.FEMUR_LENGTH * math.cos(a_femur)) + (self.TIBIA_LENGTH *math.sin(temp_ang))) * math.cos(a_coxa)
         y = (self.COXA_LENGTH + (self.FEMUR_LENGTH * math.cos(a_femur)) + (self.TIBIA_LENGTH *math.sin(temp_ang))) * math.sin(a_coxa)
         z = (self.TIBIA_LENGTH * math.cos(temp_ang)) - (self.FEMUR_LENGTH * math.sin(a_femur))  
-        return round(x), round(y), round(z)
+        return x, y, z
 
     def IKSolve(self, x, y, z):
         #equations taken from blog post by user downeym here: https://www.robotshop.com/community/forum/t/inverse-kinematic-equations-for-lynxmotion-3dof-legs/21336
@@ -202,5 +205,19 @@ class hexleg(object):
             new_angle = 180 - move_angle
         else:
             new_angle = move_angle
+        try:
+            if servo_index == 0:
+                self.a_coxa = move_angle
+            elif servo_index == 1:
+                self.a_femur = move_angle
+            else:
+                self.a_tibia = move_angle
+            self.servos[servo_index].angle = new_angle
+        except:
+            print("Failed to move by {} degrees".format(move_angle))
 
-        self.servos[servo_index].angle = new_angle
+    def run_position(self, x, y, z):
+        a_coxa, a_femur, a_tibia = self.IKSolve(x, y, z)
+        self.run_angle(a_coxa, 0)
+        self.run_angle(a_femur, 1)
+        self.run_angle(a_tibia, 2)
